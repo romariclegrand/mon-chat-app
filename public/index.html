@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Messagerie Instantanée</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ============================================================
+     PAGE D'AUTHENTIFICATION (centrée)
+     ============================================================ -->
+<div id="auth-container">
+    <div class="auth-card">
+        <h1>💬 ChatApp</h1>
+        <p class="auth-subtitle">Connectez-vous pour discuter</p>
+
+        <div id="auth-tabs">
+            <button id="tab-connexion" class="active" onclick="showTab('connexion')">Connexion</button>
+            <button id="tab-inscription" onclick="showTab('inscription')">Inscription</button>
+        </div>
+
+        <!-- Formulaire Connexion -->
+        <div id="form-connexion" class="auth-form active">
+            <input type="text" id="login-pseudo" placeholder="Pseudo" />
+            <input type="password" id="login-password" placeholder="Mot de passe" />
+            <button onclick="seConnecter()">Se connecter</button>
+            <p id="login-error" class="error"></p>
+        </div>
+
+        <!-- Formulaire Inscription -->
+        <div id="form-inscription" class="auth-form">
+            <input type="text" id="register-pseudo" placeholder="Choisissez un pseudo" />
+            <input type="password" id="register-password" placeholder="Mot de passe" />
+            <button onclick="sInscrire()">Créer un compte</button>
+            <p id="register-error" class="error"></p>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     PAGE PRINCIPALE (CHAT) avec BARRE LATÉRALE GAUCHE
+     ============================================================ -->
+<div id="chat-container" style="display: none;">
+
+    <!-- ===== BARRE LATÉRALE GAUCHE ===== -->
+    <div id="sidebar-left">
+        <!-- Profil utilisateur -->
+        <div id="user-profile">
+            <div class="avatar">👤</div>
+            <div id="user-info">
+                <span id="pseudo-display">Pseudo</span>
+                <span id="status" class="online">● En ligne</span>
+            </div>
+        </div>
+
+        <!-- Boutons d'action -->
+        <div id="user-actions">
+            <button onclick="ouvrirParametres()" class="action-btn" title="Paramètres">
+                ⚙️ Paramètres
+            </button>
+            <button onclick="deconnexion()" class="action-btn logout" title="Déconnexion">
+                🚪 Déconnexion
+            </button>
+        </div>
+
+        <!-- Liste des salons -->
+        <div id="salons-list">
+            <h3>📂 Salons</h3>
+            <button onclick="changerSalon('general')" class="salon-btn active"># général</button>
+            <button onclick="changerSalon('projet')" class="salon-btn"># projet</button>
+            <div id="salons-prives"></div>
+
+            <!-- Créer un salon privé -->
+            <div id="creer-salon">
+                <input type="text" id="input-nouveau-salon" placeholder="Nom du salon" />
+                <input type="text" id="input-invites" placeholder="Invités (pseudo1,pseudo2)" />
+                <button onclick="creerSalonPrive()">+ Créer</button>
+            </div>
+        </div>
+
+        <!-- ===== MESSAGES PRIVÉS ===== -->
+        <div id="conversations-list">
+            <h3>💬 Messages privés</h3>
+            <div id="liste-conversations">
+                <!-- Les conversations s'affichent ici dynamiquement -->
+                <p style="color: #666; font-size: 13px; padding: 8px 0;">Aucune conversation</p>
+            </div>
+        </div>
+
+        <!-- Liste des utilisateurs en ligne -->
+        <div id="users-list">
+            <h3>👥 En ligne (<span id="nb-users">0</span>)</h3>
+            <ul id="liste-utilisateurs"></ul>
+        </div>
+    </div>
+
+    <!-- ===== ZONE DE CHAT (droite) ===== -->
+    <div id="chat-area">
+        <!-- En-tête du chat -->
+        <div id="chat-header">
+            <span id="salon-actuel"># général</span>
+            <span id="chat-status">● Connecté</span>
+            <button id="btn-retour" onclick="retournerSalon()" style="display: none; background: #e94560; border: none; padding: 4px 12px; border-radius: 6px; color: #fff; cursor: pointer;">⬅ Retour</button>
+        </div>
+
+        <!-- Messages -->
+        <div id="messages"></div>
+
+        <!-- Zone de saisie -->
+        <div id="input-area">
+            <input type="text" id="input-message" placeholder="Écrire un message..." />
+            <button id="btn-envoyer" onclick="envoyerMessage()">➤</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     POPUP UTILISATEUR
+     ============================================================ -->
+<div id="popup-utilisateur" style="display: none;">
+    <div class="popup-header">
+        <strong id="popup-pseudo">Pseudo</strong>
+        <button onclick="fermerPopupUtilisateur()">✕</button>
+    </div>
+    <hr />
+    <button onclick="discuterPrive()">💬 Discuter en privé</button>
+    <button onclick="bloquerUtilisateur()">🚫 Bloquer</button>
+    <button onclick="voirProfil()">👤 Voir le profil</button>
+</div>
+
+<!-- ============================================================
+     POPUP PROFIL
+     ============================================================ -->
+<div id="popup-profil" style="display: none;">
+    <div class="popup-header">
+        <strong>👤 Profil</strong>
+        <button onclick="fermerPopupProfil()">✕</button>
+    </div>
+    <hr />
+    <div id="profil-info">
+        <p><strong>Pseudo :</strong> <span id="profil-pseudo">---</span></p>
+        <p><strong>Statut :</strong> <span id="profil-statut" style="color: #28a745;">● En ligne</span></p>
+        <p><strong>Inscrit le :</strong> <span id="profil-date">---</span></p>
+    </div>
+    <button onclick="fermerPopupProfil()" class="btn-close">Fermer</button>
+</div>
+
+<!-- ============================================================
+     PANEL PARAMÈTRES (slide-in droite)
+     ============================================================ -->
+<div id="panel-parametres" style="display: none;">
+    <div class="panel-header">
+        <strong>⚙️ Paramètres</strong>
+        <button onclick="fermerParametres()">✕</button>
+    </div>
+    <hr />
+    <h4>Thème</h4>
+    <button onclick="changerTheme('sombre')">🌙 Sombre</button>
+    <button onclick="changerTheme('clair')">☀️ Clair</button>
+    <button onclick="changerTheme('bleu')">🔵 Bleu nuit</button>
+    <hr />
+    <h4>Couleur des messages</h4>
+    <button onclick="changerCouleur('#e94560')">❤️ Rouge</button>
+    <button onclick="changerCouleur('#28a745')">💚 Vert</button>
+    <button onclick="changerCouleur('#ffc107')">💛 Jaune</button>
+    <button onclick="changerCouleur('#6f42c1')">💜 Violet</button>
+</div>
+
+<!-- ============================================================
+     SCRIPTS
+     ============================================================ -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

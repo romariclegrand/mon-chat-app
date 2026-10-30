@@ -1,0 +1,776 @@
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background: #1a1a2e;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.3s;
+}
+
+/* ============================================================
+   PAGE D'AUTHENTIFICATION (centrée)
+   ============================================================ */
+#auth-container {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+}
+
+.auth-card {
+    background: #16213e;
+    padding: 40px 30px;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    color: #eee;
+}
+
+.auth-card h1 {
+    text-align: center;
+    font-size: 28px;
+    color: #e94560;
+    margin-bottom: 4px;
+}
+
+.auth-subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 24px;
+}
+
+#auth-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+#auth-tabs button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 30px;
+    background: #0f3460;
+    color: #aaa;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+#auth-tabs button.active {
+    background: #e94560;
+    color: #fff;
+}
+
+.auth-form {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auth-form.active {
+    display: flex;
+}
+
+.auth-form input {
+    padding: 12px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #fff;
+    font-size: 14px;
+}
+
+.auth-form input::placeholder {
+    color: #666;
+}
+
+.auth-form button {
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #e94560;
+    color: #fff;
+    font-weight: bold;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.auth-form button:hover {
+    background: #c73652;
+}
+
+.error {
+    color: #e94560;
+    text-align: center;
+    font-size: 13px;
+    min-height: 20px;
+}
+
+/* ============================================================
+   CHAT CONTAINER (layout principal)
+   ============================================================ */
+#chat-container {
+    display: none;
+    width: 100%;
+    height: 100vh;
+    max-width: 1400px;
+    background: #16213e;
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: none;
+}
+
+/* ============================================================
+   BARRE LATÉRALE GAUCHE (sidebar)
+   ============================================================ */
+#sidebar-left {
+    width: 280px;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #0f3460;
+    height: 100vh;
+    padding: 16px 12px;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+/* Profil utilisateur */
+#user-profile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #0f3460;
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.avatar {
+    font-size: 32px;
+    background: #e94560;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+#user-info {
+    display: flex;
+    flex-direction: column;
+}
+
+#pseudo-display {
+    font-weight: bold;
+    font-size: 16px;
+    color: #fff;
+}
+
+#status {
+    font-size: 12px;
+    color: #28a745;
+}
+
+/* Boutons d'action (Paramètres + Déconnexion) */
+#user-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.action-btn {
+    flex: 1;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #ccc;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.3s;
+    text-align: center;
+}
+
+.action-btn:hover {
+    background: #1a3a6a;
+}
+
+.action-btn.logout {
+    color: #e94560;
+}
+
+.action-btn.logout:hover {
+    background: #2a1a2a;
+}
+
+/* Salons */
+#salons-list h3,
+#users-list h3 {
+    color: #888;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 16px 0 8px 0;
+}
+
+.salon-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #ccc;
+    cursor: pointer;
+    transition: background 0.3s;
+    font-size: 14px;
+}
+
+.salon-btn:hover {
+    background: #0f3460;
+}
+
+.salon-btn.active {
+    background: #e94560;
+    color: #fff;
+}
+
+/* Création de salon */
+#creer-salon {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#creer-salon input {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: #0f3460;
+    color: #fff;
+    font-size: 12px;
+}
+
+#creer-salon input::placeholder {
+    color: #555;
+}
+
+#creer-salon button {
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    background: #28a745;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+/* Liste utilisateurs */
+#users-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+#liste-utilisateurs {
+    list-style: none;
+    color: #ccc;
+    font-size: 14px;
+}
+
+#liste-utilisateurs li {
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#liste-utilisateurs li::before {
+    content: "●";
+    color: #28a745;
+    font-size: 10px;
+}
+
+#liste-utilisateurs li:hover {
+    background: #0f3460;
+}
+
+/* ============================================================
+   ZONE DE CHAT (droite)
+   ============================================================ */
+#chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1a1a2e;
+    height: 100vh;
+}
+
+/* En-tête du chat */
+#chat-header {
+    padding: 16px 24px;
+    background: #0f3460;
+    border-bottom: 2px solid #e94560;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #fff;
+}
+
+#salon-actuel {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+#chat-status {
+    font-size: 13px;
+    color: #28a745;
+}
+
+/* Messages */
+#messages {
+    flex: 1;
+    padding: 20px 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #1a1a2e;
+}
+
+.message {
+    max-width: 70%;
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    word-wrap: break-word;
+    align-self: flex-start;
+    background: #0f3460;
+    color: #eee;
+}
+
+.message-moi {
+    align-self: flex-end;
+    background: #e94560;
+    color: #fff;
+}
+
+.message-prive {
+    border-left: 3px solid #ffc107;
+    background: #2d1b00;
+}
+
+.message-infos {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 2px;
+}
+
+.message-date {
+    font-size: 10px;
+    color: #666;
+    margin-top: 2px;
+    text-align: right;
+}
+
+/* Zone de saisie */
+#input-area {
+    display: flex;
+    padding: 12px 24px;
+    background: #0f3460;
+    gap: 12px;
+    border-top: 1px solid #1a1a2e;
+}
+
+#input-message {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 20px;
+    background: #1a1a2e;
+    color: #fff;
+    font-size: 14px;
+}
+
+#input-message::placeholder {
+    color: #666;
+}
+
+#btn-envoyer {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 20px;
+    background: #e94560;
+    color: #fff;
+    font-weight: bold;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+#btn-envoyer:hover {
+    background: #c73652;
+}
+
+/* ============================================================
+   POPUPS (utilisateur + profil)
+   ============================================================ */
+#popup-utilisateur,
+#popup-profil {
+    position: fixed;
+    background: #16213e;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    min-width: 220px;
+    color: #eee;
+}
+
+#popup-utilisateur .popup-header,
+#popup-profil .popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+#popup-utilisateur button,
+#popup-profil button {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+}
+
+#popup-utilisateur hr,
+#popup-profil hr {
+    border-color: #0f3460;
+    margin: 8px 0;
+}
+
+#popup-utilisateur button:not(.popup-header button) {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #0f3460;
+    color: #eee;
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+#popup-utilisateur button:not(.popup-header button):hover {
+    background: #1a3a6a;
+}
+
+#popup-profil .btn-close {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 10px;
+    border-radius: 6px;
+    background: #e94560;
+    color: #fff;
+    margin-top: 12px;
+    font-weight: bold;
+}
+
+#profil-info p {
+    margin: 6px 0;
+}
+
+/* ============================================================
+   PANEL PARAMÈTRES (slide-in droit)
+   ============================================================ */
+#panel-parametres {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 300px;
+    height: 100%;
+    background: #16213e;
+    box-shadow: -5px 0 30px rgba(0, 0, 0, 0.8);
+    z-index: 2000;
+    padding: 30px 24px;
+    color: #eee;
+    overflow-y: auto;
+    transition: transform 0.3s ease;
+}
+
+#panel-parametres .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+#panel-parametres .panel-header button {
+    background: none;
+    border: none;
+    color: #e94560;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+#panel-parametres hr {
+    border-color: #0f3460;
+    margin: 16px 0;
+}
+
+#panel-parametres h4 {
+    color: #aaa;
+    margin-bottom: 8px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#panel-parametres button:not(.panel-header button) {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #eee;
+    margin: 4px 0;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+}
+
+#panel-parametres button:not(.panel-header button):hover {
+    background: #1a3a6a;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 768px) {
+    #chat-container {
+        flex-direction: column;
+        height: 100vh;
+        border-radius: 0;
+    }
+
+    #sidebar-left {
+        width: 100%;
+        height: auto;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid #0f3460;
+        padding: 12px;
+    }
+
+    #chat-area {
+        height: 60vh;
+    }
+
+    #user-profile {
+        padding: 8px 12px;
+    }
+
+    .avatar {
+        width: 36px;
+        height: 36px;
+        font-size: 24px;
+    }
+
+    #user-actions {
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        flex: 1 1 40%;
+        font-size: 12px;
+        padding: 6px 8px;
+    }
+
+    #salons-list h3,
+    #users-list h3 {
+        font-size: 11px;
+    }
+
+    .salon-btn {
+        font-size: 13px;
+        padding: 6px 10px;
+    }
+
+    #messages {
+        padding: 12px 16px;
+    }
+
+    .message {
+        max-width: 85%;
+        font-size: 13px;
+    }
+
+    #input-area {
+        padding: 8px 16px;
+        gap: 8px;
+    }
+
+    #input-message {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+
+    #btn-envoyer {
+        font-size: 16px;
+        padding: 8px 16px;
+    }
+
+    #panel-parametres {
+        width: 100%;
+    }
+
+    #popup-utilisateur,
+    #popup-profil {
+        min-width: 180px;
+        padding: 16px;
+    }
+
+    #chat-header {
+        padding: 12px 16px;
+    }
+
+    #salon-actuel {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .auth-card {
+        padding: 24px 16px;
+    }
+
+    #sidebar-left {
+        max-height: 35vh;
+        padding: 8px;
+    }
+
+    #user-profile {
+        padding: 6px 10px;
+    }
+
+    .avatar {
+        width: 30px;
+        height: 30px;
+        font-size: 18px;
+    }
+
+    #pseudo-display {
+        font-size: 14px;
+    }
+
+    .action-btn {
+        font-size: 11px;
+        padding: 4px 6px;
+    }
+
+    #creer-salon input {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+
+    #creer-salon button {
+        font-size: 11px;
+        padding: 4px;
+    }
+
+    #messages {
+        padding: 8px 12px;
+    }
+
+    .message {
+        max-width: 90%;
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+
+    #input-area {
+        padding: 6px 12px;
+        gap: 6px;
+    }
+
+    #input-message {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+
+    #btn-envoyer {
+        font-size: 14px;
+        padding: 6px 12px;
+    }
+
+    #chat-header {
+        padding: 8px 12px;
+    }
+
+    #salon-actuel {
+        font-size: 14px;
+    }
+}
+/* ============================================================
+   CONVERSATIONS PRIVÉES
+   ============================================================ */
+#conversations-list {
+    margin-top: 12px;
+    border-top: 1px solid #0f3460;
+    padding-top: 10px;
+}
+
+#conversations-list h3 {
+    color: #888;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+}
+
+.conv-item {
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #ccc;
+    transition: background 0.2s;
+}
+
+.conv-item:hover {
+    background: #0f3460;
+}
+
+#btn-retour {
+    display: none;
+    background: #e94560;
+    border: none;
+    padding: 4px 14px;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+#btn-retour:hover {
+    background: #c73652;
+}
