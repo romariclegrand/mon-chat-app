@@ -6,10 +6,32 @@
 const socket = io();
 let pseudoActuel = null;
 let salonActuel = 'general';
-let conversationActuelle = null; // { pseudo: 'roland', conversation_id: 'prive_romantic_roland' }
-let conversations = {}; // { 'pseudo': 'conversation_id' }
+let conversationActuelle = null;
+let conversations = {};
 let utilisateurSelectionne = null;
-let enConversationPrivee = false; // Nouvelle variable
+let monRole = 'agent'; // 'agent' ou 'admin'
+let enConversationPrivee = false;
+
+// ============================================================
+// CHIFFREMENT E2E (AES-256 via crypto-js)
+// ============================================================
+function deriveKey(pseudoCible) {
+    return CryptoJS.SHA256(pseudoCible + "HACKATHON_226_SALT_2026").toString();
+}
+
+function chiffrer(contenu, cible) {
+    return CryptoJS.AES.encrypt(contenu, deriveKey(cible)).toString();
+}
+
+function dechiffrer(ciphertext, source) {
+    try {
+        const bytes = CryptoJS.AES.decrypt(ciphertext, deriveKey(source));
+        const resultat = bytes.toString(CryptoJS.enc.Utf8);
+        return resultat || "[Message chiffré - clé incorrecte]";
+    } catch (e) {
+        return "[Erreur de déchiffrement]";
+    }
+}
 
 // ============================================================
 // AUTHENTIFICATION
@@ -44,14 +66,15 @@ function sInscrire() {
 function seConnecter() {
     const pseudo = document.getElementById('login-pseudo').value.trim();
     const password = document.getElementById('login-password').value.trim();
+    const totp_code = document.getElementById('login-totp').value.trim(); // NOUVEAU
     const errorEl = document.getElementById('login-error');
 
-    if (!pseudo || !password) {
-        errorEl.textContent = 'Veuillez remplir tous les champs.';
+    if (!pseudo || !password || !totp_code) {
+        errorEl.textContent = 'Veuillez remplir tous les champs (dont le 2FA).';
         return;
     }
 
-    socket.emit('connexion', { pseudo, password });
+    socket.emit('connexion', { pseudo, password, totp_code });
 }
 
 // ============================================================
@@ -62,13 +85,23 @@ socket.on('inscription_reussie', (data) => {
     document.getElementById('register-error').textContent = '';
     document.getElementById('register-pseudo').value = '';
     document.getElementById('register-password').value = '';
-    alert(data.message);
-    showTab('connexion');
+    
+    // Afficher le QR Code
+    if (data.qr_code) {
+        document.getElementById('qrcode-img').src = data.qr_code;
+        document.getElementById('manual-secret').textContent = data.secret;
+        document.getElementById('qrcode-container').style.display = 'block';
+        alert('Compte créé ! Scannez le QR Code avec Google Authenticator avant de vous connecter.');
+    } else {
+        alert(data.message);
+        showTab('connexion');
+    }
 });
 
 socket.on('connexion_reussie', (data) => {
     pseudoActuel = data.pseudo;
-    document.getElementById('pseudo-display').textContent = pseudoActuel;
+    monRole = data.role; // On stocke le rôle
+    document.getElementById('pseudo-display').textContent = pseudoActuel + (monRole === 'admin' ? ' (Admin)' : '');
     document.getElementById('auth-container').style.display = 'none';
     document.getElementById('chat-container').style.display = 'flex';
     document.getElementById('login-error').textContent = '';
@@ -88,21 +121,20 @@ socket.on('erreur', (message) => {
 // ============================================================
 
 socket.on('historique', (messagesData) => {
-    // Ne charger l'historique que si on est dans un salon (pas en conversation privée)
     if (!enConversationPrivee) {
         const container = document.getElementById('messages');
         container.innerHTML = '';
         messagesData.forEach(msg => {
-            ajouterMessage(msg.auteur, msg.contenu, msg.date_envoi, false);
+            // On passe msg.est_chiffre pour que l'affichage sache qu'il faut déchiffrer
+            ajouterMessage(msg.auteur, msg.contenu, msg.date_envoi, false, msg.est_chiffre);
         });
         container.scrollTop = container.scrollHeight;
     }
 });
 
 socket.on('nouveau_message', (data) => {
-    // Ne pas afficher les messages publics si on est en conversation privée
     if (!enConversationPrivee) {
-        ajouterMessage(data.auteur, data.contenu, data.date, false);
+        ajouterMessage(data.auteur, data.contenu, data.date, false, data.est_chiffre);
         const container = document.getElementById('messages');
         container.scrollTop = container.scrollHeight;
     }
@@ -123,23 +155,19 @@ socket.on('salon_change', (data) => {
 // ============================================================
 
 socket.on('message_prive', (data) => {
-    // Vérifier si on est dans la bonne conversation
     if (enConversationPrivee && conversationActuelle && data.conversation_id === conversationActuelle.conversation_id) {
-        ajouterMessage(data.auteur, data.contenu, data.date, true);
+        ajouterMessage(data.auteur, data.contenu, data.date, true, data.est_chiffre);
         const container = document.getElementById('messages');
         container.scrollTop = container.scrollHeight;
     } else {
-        // Nouveau message d'une autre conversation
         const autre = data.auteur === pseudoActuel ? data.destinataire : data.auteur;
         
-        // Sauvegarder la conversation si elle n'existe pas
         if (!conversations[autre]) {
             conversations[autre] = data.conversation_id;
             localStorage.setItem(`conversations_${pseudoActuel}`, JSON.stringify(conversations));
             afficherConversations();
         }
         
-        // Notification (seulement si c'est pas moi)
         if (data.auteur !== pseudoActuel) {
             alert(`📩 Nouveau message de ${data.auteur}`);
         }
@@ -151,7 +179,7 @@ socket.on('historique_conversation', (data) => {
         const container = document.getElementById('messages');
         container.innerHTML = '';
         data.messages.forEach(msg => {
-            ajouterMessage(msg.auteur, msg.contenu, msg.date_envoi, true);
+            ajouterMessage(msg.auteur, msg.contenu, msg.date_envoi, true, msg.est_chiffre);
         });
         container.scrollTop = container.scrollHeight;
     }
@@ -172,41 +200,51 @@ socket.on('utilisateurs_connectes', (users) => {
         li.style.cursor = 'pointer';
         li.style.padding = '6px 10px';
         li.style.borderRadius = '6px';
-        li.style.transition = 'background-color 0.2s';
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        li.style.alignItems = 'center';
 
-        li.addEventListener('mouseenter', () => {
-            li.style.backgroundColor = '#0f3460';
-        });
-        li.addEventListener('mouseleave', () => {
-            li.style.backgroundColor = 'transparent';
-        });
+        // Bouton de révocation (seulement si admin et que ce n'est pas soi-même)
+        if (monRole === 'admin' && pseudo !== pseudoActuel) {
+            const btnRevoke = document.createElement('button');
+            btnRevoke.textContent = '🚫';
+            btnRevoke.title = 'Révoquer l\'accès';
+            btnRevoke.style.background = '#e94560';
+            btnRevoke.style.border = 'none';
+            btnRevoke.style.borderRadius = '4px';
+            btnRevoke.style.cursor = 'pointer';
+            btnRevoke.style.padding = '2px 6px';
+            btnRevoke.style.color = '#fff';
+            btnRevoke.onclick = (e) => {
+                e.stopPropagation(); // Évite d'ouvrir le popup
+                if (confirm(`Révoquer l'accès de ${pseudo} ?`)) {
+                    socket.emit('revoquer_agent', { pseudo });
+                }
+            };
+            li.appendChild(btnRevoke);
+        }
 
         li.addEventListener('click', (event) => {
-            if (pseudo !== pseudoActuel) {
-                ouvrirPopupUtilisateur(pseudo, event);
-            } else {
-                alert('C\'est vous !');
-            }
+            if (pseudo !== pseudoActuel) ouvrirPopupUtilisateur(pseudo, event);
         });
 
         list.appendChild(li);
     });
 });
 
-socket.on('nouvel_utilisateur', (pseudo) => {
-    if (!enConversationPrivee) {
-        ajouterMessage('Système', `${pseudo} a rejoint le chat.`, new Date().toISOString(), false);
-    }
-});
-
 socket.on('utilisateur_deconnecte', (pseudo) => {
     if (!enConversationPrivee) {
-        ajouterMessage('Système', `${pseudo} a quitté le chat.`, new Date().toISOString(), false);
+        ajouterMessage('Système', `${pseudo} a quitté le chat.`, new Date().toISOString(), false, false);
     }
 });
 
 socket.on('utilisateur_banni', (data) => {
-    alert(`${data.pseudo} a été banni.`);
+    if (data.pseudo === pseudoActuel) {
+        alert('Vous avez été banni.');
+        socket.disconnect();
+    } else {
+        alert(`${data.pseudo} a été banni.`);
+    }
 });
 
 // ============================================================
@@ -216,7 +254,6 @@ socket.on('utilisateur_banni', (data) => {
 function changerSalon(salon) {
     if (salon === salonActuel && !enConversationPrivee) return;
     
-    // Si on est dans une conversation privée, on la ferme
     enConversationPrivee = false;
     conversationActuelle = null;
     document.getElementById('btn-retour').style.display = 'none';
@@ -252,7 +289,7 @@ socket.on('salon_creer', (data) => {
 });
 
 // ============================================================
-// ENVOYER UN MESSAGE (PUBLIC OU PRIVÉ)
+// ENVOYER UN MESSAGE (PUBLIC OU PRIVÉ) - PATCH E2E
 // ============================================================
 
 function envoyerMessage() {
@@ -261,19 +298,30 @@ function envoyerMessage() {
     if (!contenu) return;
 
     if (enConversationPrivee && conversationActuelle) {
-        // ===== MESSAGE PRIVÉ (1-à-1) =====
+        // ===== MESSAGE PRIVÉ CHIFFRÉ =====
+        const contenuChiffre = chiffrer(contenu, conversationActuelle.pseudo);
+        
         socket.emit('message', {
-            contenu,
+            contenu: contenuChiffre,
             destination: conversationActuelle.pseudo,
-            conversation_id: conversationActuelle.conversation_id
+            conversation_id: conversationActuelle.conversation_id,
+            est_chiffre: true
         });
-        // ❌ PLUS D'AFFICHAGE OPTIMISTE (le serveur renverra le message)
-        // ✅ On vide juste l'input
+        
+        // Affichage optimiste côté expéditeur (on affiche le clair)
+        ajouterMessage(pseudoActuel, contenu, new Date().toISOString(), true, false);
+        
     } else {
-        // ===== MESSAGE PUBLIC (dans un salon) =====
-        socket.emit('message', { contenu });
-        // ✅ Affichage optimiste pour les messages publics (OK)
-        ajouterMessage(pseudoActuel, contenu, new Date().toISOString(), false);
+        // ===== MESSAGE PUBLIC CHIFFRÉ =====
+        const contenuChiffre = chiffrer(contenu, salonActuel);
+        
+        socket.emit('message', {
+            contenu: contenuChiffre,
+            est_chiffre: true
+        });
+        
+        // Affichage optimiste (clair local)
+        ajouterMessage(pseudoActuel, contenu, new Date().toISOString(), false, false);
     }
 
     input.value = '';
@@ -324,29 +372,24 @@ function afficherConversations() {
         container.appendChild(div);
     });
 }
+
 function ouvrirConversationPrivee(pseudo) {
-    // Générer un ID de conversation unique (trié alphabétiquement)
     const ids = [pseudoActuel, pseudo].sort();
     const conversation_id = `prive_${ids[0]}_${ids[1]}`;
 
-    // Sauvegarder la conversation
     conversations[pseudo] = conversation_id;
     localStorage.setItem(`conversations_${pseudoActuel}`, JSON.stringify(conversations));
     afficherConversations();
 
-    // Mettre à jour l'interface
     enConversationPrivee = true;
     conversationActuelle = { pseudo, conversation_id };
     
-    // ✅ CORRECTION ICI : 💬 au lieu de #
     document.getElementById('salon-actuel').textContent = `💬 ${pseudo}`;
     document.getElementById('btn-retour').style.display = 'block';
     document.getElementById('messages').innerHTML = '';
 
-    // Charger l'historique
     socket.emit('historique_conversation', { conversation_id });
 
-    // Changer le placeholder de l'input
     document.getElementById('input-message').placeholder = `Message privé pour ${pseudo}...`;
 }
 
@@ -357,7 +400,6 @@ function retournerSalon() {
     document.getElementById('btn-retour').style.display = 'none';
     document.getElementById('input-message').placeholder = 'Écrire un message...';
     document.getElementById('messages').innerHTML = '';
-    // Recharger l'historique du salon
     socket.emit('changer_salon', { nouveauSalon: salonActuel });
 }
 
@@ -375,7 +417,6 @@ function ouvrirPopupUtilisateur(pseudo, event) {
     document.getElementById('popup-pseudo').textContent = pseudo;
     popup.style.display = 'block';
 
-    // Positionner la popup
     const x = Math.min(event.clientX + 10, window.innerWidth - 240);
     const y = Math.min(event.clientY + 10, window.innerHeight - 160);
     popup.style.left = x + 'px';
@@ -445,10 +486,10 @@ socket.on('message_supprime', (data) => {
 });
 
 // ============================================================
-// AFFICHER UN MESSAGE
+// AFFICHER UN MESSAGE - PATCH E2E
 // ============================================================
 
-function ajouterMessage(auteur, contenu, date, estPrive = false) {
+function ajouterMessage(auteur, contenu, date, estPrive = false, estChiffre = false) {
     const container = document.getElementById('messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = 'message';
@@ -460,12 +501,21 @@ function ajouterMessage(auteur, contenu, date, estPrive = false) {
         msgDiv.classList.add('message-prive');
     }
 
+    // Déchiffrement si le message vient du serveur (estChiffre = true)
+    let contenuAffiche = contenu;
+    if (estChiffre) {
+        const cle = estPrive 
+            ? (auteur === pseudoActuel ? conversationActuelle?.pseudo : auteur)
+            : salonActuel;
+        contenuAffiche = dechiffrer(contenu, cle);
+    }
+
     const dateObj = new Date(date);
     const dateStr = dateObj.toLocaleTimeString();
 
     msgDiv.innerHTML = `
         <div class="message-infos">${auteur}</div>
-        ${contenu}
+        ${contenuAffiche}
         <div class="message-date">${dateStr}</div>
     `;
 
@@ -556,4 +606,33 @@ function deconnexion() {
 
 document.getElementById('input-message').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') envoyerMessage();
+});
+
+function showTab(tab) {
+    document.querySelectorAll('.auth-form').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('#auth-tabs button').forEach(el => el.classList.remove('active'));
+    
+    // Cacher le QR code si on change d'onglet
+    document.getElementById('qrcode-container').style.display = 'none';
+
+    if (tab === 'connexion') {
+        document.getElementById('form-connexion').classList.add('active');
+        document.getElementById('tab-connexion').classList.add('active');
+    } else {
+        document.getElementById('form-inscription').classList.add('active');
+        document.getElementById('tab-inscription').classList.add('active');
+    }
+}
+
+socket.on('session_revoquee', (data) => {
+    alert('⛔ ' + data.message);
+    deconnexion(); // Déconnecte l'utilisateur côté client
+});
+
+socket.on('utilisateur_revoque', (data) => {
+    ajouterMessage('Système', `${data.pseudo} a été révoqué.`, new Date().toISOString(), false, false);
+});
+
+socket.on('revocation_reussie', (data) => {
+    alert(`✅ L'accès de ${data.pseudo} a été révoqué.`);
 });

@@ -24,6 +24,7 @@
         <!-- Formulaire Connexion -->
         <div id="form-connexion" class="auth-form active">
             <input type="text" id="login-pseudo" placeholder="Pseudo" />
+            <input type="text" id="login-totp" placeholder="Code 2FA (6 chiffres)" maxlength="6" />
             <input type="password" id="login-password" placeholder="Mot de passe" />
             <button onclick="seConnecter()">Se connecter</button>
             <p id="login-error" class="error"></p>
@@ -33,8 +34,14 @@
         <div id="form-inscription" class="auth-form">
             <input type="text" id="register-pseudo" placeholder="Choisissez un pseudo" />
             <input type="password" id="register-password" placeholder="Mot de passe" />
+            <input type="text" id="register-totp" placeholder="Code 2FA (6 chiffres)" maxlength="6" />
             <button onclick="sInscrire()">Créer un compte</button>
             <p id="register-error" class="error"></p>
+            <div id="qrcode-container" style="display: none; text-align: center; margin-top: 15px;">
+    <p style="color: #28a745;">Scannez ce code avec Google Authenticator :</p>
+    <img id="qrcode-img" src="" style="width: 150px; height: 150px; margin: 10px auto; border: 2px solid #fff; border-radius: 8px;" />
+    <p style="font-size: 12px; color: #aaa;">Ou saisissez manuellement : <br><span id="manual-secret" style="color: #e94560; font-weight: bold;"></span></p>
+</div>
         </div>
     </div>
 </div>
@@ -172,6 +179,7 @@
      SCRIPTS
      ============================================================ -->
 <script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

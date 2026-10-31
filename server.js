@@ -1,45 +1,52 @@
 // ============================================================
-// SERVEUR NODE.JS - MESSAGERIE INSTANTANÉE MULTI-UTILISATEUR
+// SERVEUR NODE.JS - MESSAGERIE INSTANTANÉE
+// Version : E2E + 2FA + Révocation
 // ============================================================
 
-// ===== IMPORTS =====
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const path = require('path');
+const crypto = require('crypto');
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 require('dotenv').config();
 
-console.log('✅ Démarrage du serveur...');
-
-// ===== INITIALISATION =====
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
-
 const PORT = process.env.PORT || 3000;
 
-// ===== MIDDLEWARES =====
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// ===== BASE DE DONNÉES SQLITE =====
-console.log('📁 Connexion à la base de données...');
 const db = new sqlite3.Database(path.join(__dirname, 'database', 'chat.db'));
 
 db.serialize(() => {
+    // Table users avec role (admin/agent)
     db.run(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pseudo TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            totp_secret TEXT,
+            role TEXT DEFAULT 'agent',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    `, (err) => {
-        if (err) console.error('❌ Erreur table users:', err.message);
-        else console.log('✅ Table users prête');
-    });
+    `, (err) => { if (err) console.error(err); else console.log('✅ Table users prête'); });
+
+    // Table sessions pour la révocation
+    db.run(`
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pseudo TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            revoked BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `, (err) => { if (err) console.error(err); else console.log('✅ Table sessions prête'); });
 
     db.run(`
         CREATE TABLE IF NOT EXISTS messages (
@@ -49,368 +56,211 @@ db.serialize(() => {
             salon TEXT DEFAULT 'general',
             conversation_id TEXT,
             date_envoi DATETIME DEFAULT CURRENT_TIMESTAMP,
-            est_prive BOOLEAN DEFAULT 0
+            est_prive BOOLEAN DEFAULT 0,
+            est_chiffre BOOLEAN DEFAULT 1
         )
-    `, (err) => {
-        if (err) console.error('❌ Erreur table messages:', err.message);
-        else console.log('✅ Table messages prête');
-    });
+    `, (err) => { if (err) console.error(err); else console.log('✅ Table messages prête'); });
 });
 
-// ===== VARIABLES GLOBALES =====
 const users = {};
 const connectedUsers = {};
 
-// ============================================================
-// SOCKET.IO - GESTION DES CONNEXIONS
-// ============================================================
 io.on('connection', (socket) => {
     console.log(`🟢 Nouvel utilisateur connecté : ${socket.id}`);
 
     // ===== INSCRIPTION =====
     socket.on('inscription', async (data) => {
         const { pseudo, password } = data;
-
-        if (!pseudo || !password) {
-            socket.emit('erreur', 'Veuillez remplir tous les champs.');
-            return;
-        }
+        if (!pseudo || !password) return socket.emit('erreur', 'Champs vides.');
 
         try {
             const existingUser = await new Promise((resolve) => {
-                db.get('SELECT * FROM users WHERE pseudo = ?', [pseudo], (err, row) => {
-                    resolve(row);
-                });
+                db.get('SELECT * FROM users WHERE pseudo = ?', [pseudo], (err, row) => resolve(row));
             });
+            if (existingUser) return socket.emit('erreur', 'Ce pseudo est déjà pris.');
 
-            if (existingUser) {
-                socket.emit('erreur', 'Ce pseudo est déjà pris.');
-                return;
-            }
-
-            const saltRounds = 10;
-            const hash = await bcrypt.hash(password, saltRounds);
+            const hash = await bcrypt.hash(password, 10);
+            const secret = speakeasy.generateSecret({ name: `Messagerie226 (${pseudo})` });
 
             await new Promise((resolve) => {
-                db.run('INSERT INTO users (pseudo, password_hash) VALUES (?, ?)', [pseudo, hash], function(err) {
-                    resolve();
-                });
+                db.run('INSERT INTO users (pseudo, password_hash, totp_secret) VALUES (?, ?, ?)', 
+                    [pseudo, hash, secret.base32], function(err) { resolve(); });
             });
 
-            socket.emit('inscription_reussie', { message: 'Compte créé avec succès !' });
-        } catch (error) {
-            console.error('❌ Erreur inscription:', error);
-            socket.emit('erreur', 'Erreur lors de l\'inscription.');
-        }
+            QRCode.toDataURL(secret.otpauth_url, (err, data_url) => {
+                socket.emit('inscription_reussie', { 
+                    message: 'Compte créé ! Scannez ce QR Code.',
+                    qr_code: data_url,
+                    secret: secret.base32
+                });
+            });
+        } catch (error) { socket.emit('erreur', 'Erreur inscription.'); }
     });
 
     // ===== CONNEXION =====
     socket.on('connexion', async (data) => {
-        const { pseudo, password } = data;
-
-        if (!pseudo || !password) {
-            socket.emit('erreur', 'Veuillez remplir tous les champs.');
-            return;
-        }
+        const { pseudo, password, totp_code } = data;
+        if (!pseudo || !password || !totp_code) return socket.emit('erreur', 'Champs vides (dont 2FA).');
 
         try {
             const user = await new Promise((resolve) => {
-                db.get('SELECT * FROM users WHERE pseudo = ?', [pseudo], (err, row) => {
-                    resolve(row);
-                });
+                db.get('SELECT * FROM users WHERE pseudo = ?', [pseudo], (err, row) => resolve(row));
             });
-
-            if (!user) {
-                socket.emit('erreur', 'Pseudo incorrect.');
-                return;
-            }
+            if (!user) return socket.emit('erreur', 'Pseudo incorrect.');
 
             const match = await bcrypt.compare(password, user.password_hash);
-            if (!match) {
-                socket.emit('erreur', 'Mot de passe incorrect.');
-                return;
+            if (!match) return socket.emit('erreur', 'Mot de passe incorrect.');
+
+            const verified = speakeasy.totp.verify({
+                secret: user.totp_secret, encoding: 'base32', token: totp_code, window: 1
+            });
+            if (!verified) return socket.emit('erreur', 'Code 2FA invalide.');
+
+            // --- VERIFICATION DE REVOCATION ---
+            // On regarde si l'utilisateur a des sessions existantes
+            const anySession = await new Promise((resolve) => {
+                db.get('SELECT * FROM sessions WHERE pseudo = ?', [pseudo], (err, row) => resolve(row));
+            });
+            const activeSession = await new Promise((resolve) => {
+                db.get('SELECT * FROM sessions WHERE pseudo = ? AND revoked = 0', [pseudo], (err, row) => resolve(row));
+            });
+            
+            // Si l'utilisateur a déjà eu une session mais que TOUTES sont révoquées -> BLOQUÉ
+            if (anySession && !activeSession) {
+                return socket.emit('erreur', '⛔ Votre accès a été révoqué par l\'administrateur.');
             }
 
+            // --- CREATION DE LA SESSION ---
+            const token = crypto.randomBytes(32).toString('hex');
+            await new Promise((resolve) => {
+                db.run('INSERT INTO sessions (pseudo, token) VALUES (?, ?)', [pseudo, token], resolve);
+            });
+
+            // Kick l'ancienne session
             if (connectedUsers[pseudo]) {
                 const oldSocketId = connectedUsers[pseudo];
-                if (io.sockets.sockets.get(oldSocketId)) {
-                    io.sockets.sockets.get(oldSocketId).disconnect(true);
-                }
+                if (io.sockets.sockets.get(oldSocketId)) io.sockets.sockets.get(oldSocketId).disconnect(true);
                 delete connectedUsers[pseudo];
                 delete users[oldSocketId];
             }
 
             connectedUsers[pseudo] = socket.id;
-            users[socket.id] = { pseudo, salon: 'general' };
-
+            users[socket.id] = { pseudo, salon: 'general', role: user.role };
             socket.join('general');
 
             const messages = await new Promise((resolve) => {
-                db.all('SELECT * FROM messages WHERE salon = ? ORDER BY date_envoi LIMIT 50', ['general'], (err, rows) => {
-                    resolve(rows || []);
-                });
+                db.all('SELECT * FROM messages WHERE salon = ? ORDER BY date_envoi LIMIT 50', ['general'], (err, rows) => resolve(rows || []));
             });
             socket.emit('historique', messages);
-
             io.emit('utilisateurs_connectes', Object.keys(connectedUsers));
             socket.broadcast.emit('nouvel_utilisateur', pseudo);
+            socket.emit('connexion_reussie', { pseudo, role: user.role, token });
 
-            socket.emit('connexion_reussie', { pseudo });
-            console.log(`✅ Connexion réussie: ${pseudo}`);
-        } catch (error) {
-            console.error('❌ Erreur connexion:', error);
-            socket.emit('erreur', 'Erreur lors de la connexion.');
-        }
+        } catch (error) { socket.emit('erreur', 'Erreur connexion.'); }
     });
 
-    // ============================================================
-    // ENVOI DE MESSAGE (CORRIGÉ)
-    // ============================================================
+    // ===== RÉVOCATION (Admin seulement) =====
+    socket.on('revoquer_agent', async (data) => {
+        const admin = users[socket.id];
+        if (!admin || admin.role !== 'admin') {
+            return socket.emit('erreur', 'Seul un admin peut révoquer un agent.');
+        }
+
+        const targetPseudo = data.pseudo;
+
+        // 1. Invalider toutes les sessions en BDD
+        await new Promise((resolve) => {
+            db.run('UPDATE sessions SET revoked = 1 WHERE pseudo = ?', [targetPseudo], resolve);
+        });
+
+        // 2. Déconnecter l'agent s'il est en ligne
+        const targetSocketId = connectedUsers[targetPseudo];
+        if (targetSocketId) {
+            io.to(targetSocketId).emit('session_revoquee', { message: 'Votre accès a été révoqué.' });
+            io.sockets.sockets.get(targetSocketId).disconnect(true);
+            delete connectedUsers[targetPseudo];
+            delete users[targetSocketId];
+        }
+
+        io.emit('utilisateur_revoque', { pseudo: targetPseudo });
+        socket.emit('revocation_reussie', { pseudo: targetPseudo });
+        console.log(`🚫 ${targetPseudo} a été révoqué par ${admin.pseudo}`);
+    });
+
+    // ===== MESSAGES (Chiffrés) =====
     socket.on('message', async (data) => {
         const { contenu, destination, conversation_id } = data;
         const user = users[socket.id];
+        if (!user || !contenu) return;
 
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        if (!contenu || contenu.trim() === '') {
-            return;
-        }
-
-        const auteur = user.pseudo;
-
-        try {
-            if (destination && conversation_id) {
-                // ===== MESSAGE PRIVÉ (1-à-1) =====
-                console.log(`🔒 Message privé de ${auteur} à ${destination}: ${contenu}`);
-
-                // Sauvegarde en BDD
-                await new Promise((resolve) => {
-                    db.run(
-                        'INSERT INTO messages (auteur, contenu, conversation_id, est_prive) VALUES (?, ?, ?, ?)',
-                        [auteur, contenu, conversation_id, 1],
-                        function(err) {
-                            if (err) console.error('❌ Erreur insertion BDD:', err);
-                            resolve();
-                        }
-                    );
-                });
-
-                // Récupérer le socket du destinataire
-                const destSocketId = connectedUsers[destination];
-                console.log(`📤 Destinataire ${destination} connecté: ${destSocketId ? 'Oui' : 'Non'}`);
-
-                // Données du message
-                const messageData = {
-                    auteur: auteur,
-                    contenu: contenu,
-                    date: new Date().toISOString(),
-                    conversation_id: conversation_id,
-                    est_prive: true,
-                    destinataire: destination
-                };
-
-                // Envoyer à l'expéditeur (pour affichage immédiat)
-                io.to(socket.id).emit('message_prive', messageData);
-                console.log(`✅ Message envoyé à l'expéditeur: ${auteur}`);
-
-                // Envoyer au destinataire s'il est connecté
-                if (destSocketId) {
-                    io.to(destSocketId).emit('message_prive', messageData);
-                    console.log(`✅ Message envoyé au destinataire: ${destination}`);
-                } else {
-                    console.log(`⚠️ ${destination} n'est pas connecté. Message sauvegardé en BDD.`);
-                    socket.emit('erreur', `${destination} n'est pas connecté. Message sauvegardé.`);
-                }
-
-            } else {
-                // ===== MESSAGE PUBLIC =====
-                const salon = user.salon || 'general';
-                console.log(`📢 Message public de ${auteur} dans ${salon}: ${contenu}`);
-
-                await new Promise((resolve) => {
-                    db.run(
-                        'INSERT INTO messages (auteur, contenu, salon, est_prive) VALUES (?, ?, ?, ?)',
-                        [auteur, contenu, salon, 0],
-                        function(err) {
-                            resolve();
-                        }
-                    );
-                });
-
-                io.to(salon).emit('nouveau_message', {
-                    auteur,
-                    contenu,
-                    date: new Date().toISOString()
-                });
-            }
-        } catch (error) {
-            console.error('❌ Erreur envoi message:', error);
-            socket.emit('erreur', 'Erreur lors de l\'envoi du message.');
-        }
-    });
-
-    // ============================================================
-    // AUTRES ÉVÉNEMENTS
-    // ============================================================
-
-    socket.on('changer_salon', async (data) => {
-        const { nouveauSalon } = data;
-        const user = users[socket.id];
-
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        socket.leave(user.salon);
-        user.salon = nouveauSalon;
-        socket.join(nouveauSalon);
-
-        const messages = await new Promise((resolve) => {
-            db.all('SELECT * FROM messages WHERE salon = ? ORDER BY date_envoi LIMIT 50', [nouveauSalon], (err, rows) => {
-                resolve(rows || []);
+        if (destination && conversation_id) {
+            await new Promise((resolve) => {
+                db.run('INSERT INTO messages (auteur, contenu, conversation_id, est_prive, est_chiffre) VALUES (?, ?, ?, ?, ?)',
+                    [user.pseudo, contenu, conversation_id, 1, 1], resolve);
             });
-        });
-        socket.emit('historique', messages);
-
-        socket.emit('salon_change', { nouveauSalon });
-        console.log(`📂 ${user.pseudo} a changé pour le salon: ${nouveauSalon}`);
+            const destSocketId = connectedUsers[destination];
+            const msgData = { auteur: user.pseudo, contenu, date: new Date().toISOString(), conversation_id, est_prive: true, est_chiffre: true, destinataire: destination };
+            io.to(socket.id).emit('message_prive', msgData);
+            if (destSocketId) io.to(destSocketId).emit('message_prive', msgData);
+        } else {
+            const salon = user.salon || 'general';
+            await new Promise((resolve) => {
+                db.run('INSERT INTO messages (auteur, contenu, salon, est_prive, est_chiffre) VALUES (?, ?, ?, ?, ?)',
+                    [user.pseudo, contenu, salon, 0, 1], resolve);
+            });
+            io.to(salon).emit('nouveau_message', { auteur: user.pseudo, contenu, date: new Date().toISOString(), est_chiffre: true });
+        }
     });
 
-    socket.on('creer_salon_prive', (data) => {
-        const { nomSalon, invites } = data;
+    // ===== AUTRES ÉVÉNEMENTS =====
+    socket.on('changer_salon', async (data) => {
         const user = users[socket.id];
-
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        const salonPrive = `prive_${nomSalon}`;
-        socket.join(salonPrive);
-        user.salon = salonPrive;
-
-        invites.forEach(pseudo => {
-            const socketId = connectedUsers[pseudo];
-            if (socketId) {
-                io.sockets.sockets.get(socketId).join(salonPrive);
-                io.to(socketId).emit('invitation_salon', {
-                    salon: salonPrive,
-                    inviteur: user.pseudo
-                });
-            }
+        if (!user) return;
+        socket.leave(user.salon); user.salon = data.nouveauSalon; socket.join(data.nouveauSalon);
+        const messages = await new Promise((resolve) => {
+            db.all('SELECT * FROM messages WHERE salon = ? ORDER BY date_envoi LIMIT 50', [data.nouveauSalon], (err, rows) => resolve(rows || []));
         });
-
-        socket.emit('salon_creer', { salon: salonPrive, message: 'Salon privé créé avec succès.' });
-        socket.emit('salon_change', { nouveauSalon: salonPrive });
-        console.log(`🔒 ${user.pseudo} a créé le salon privé: ${salonPrive}`);
+        socket.emit('historique', messages); socket.emit('salon_change', { nouveauSalon: data.nouveauSalon });
     });
 
     socket.on('historique_conversation', async (data) => {
-        const { conversation_id } = data;
         const user = users[socket.id];
-
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        try {
-            const messages = await new Promise((resolve) => {
-                db.all(
-                    'SELECT * FROM messages WHERE conversation_id = ? ORDER BY date_envoi LIMIT 50',
-                    [conversation_id],
-                    (err, rows) => {
-                        resolve(rows || []);
-                    }
-                );
-            });
-            console.log(`📜 Historique conversation ${conversation_id}: ${messages.length} messages`);
-            socket.emit('historique_conversation', { conversation_id, messages });
-        } catch (error) {
-            console.error('❌ Erreur historique:', error);
-            socket.emit('erreur', 'Erreur lors du chargement de l\'historique.');
-        }
+        if (!user) return;
+        const messages = await new Promise((resolve) => {
+            db.all('SELECT * FROM messages WHERE conversation_id = ? ORDER BY date_envoi LIMIT 50', [data.conversation_id], (err, rows) => resolve(rows || []));
+        });
+        socket.emit('historique_conversation', { conversation_id: data.conversation_id, messages });
     });
 
     socket.on('supprimer_message', (data) => {
-        const { messageId } = data;
         const user = users[socket.id];
-
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        db.run('DELETE FROM messages WHERE id = ? AND auteur = ?', [messageId, user.pseudo], function(err) {
-            if (err) {
-                socket.emit('erreur', 'Erreur lors de la suppression.');
-                return;
-            }
-            if (this.changes === 0) {
-                socket.emit('erreur', 'Vous ne pouvez supprimer que vos propres messages.');
-                return;
-            }
-            io.to(user.salon).emit('message_supprime', { messageId });
-            console.log(`🗑️ ${user.pseudo} a supprimé un message`);
+        if (!user) return;
+        db.run('DELETE FROM messages WHERE id = ? AND auteur = ?', [data.messageId, user.pseudo], function() {
+            if (this.changes > 0) io.to(user.salon).emit('message_supprime', { messageId: data.messageId });
         });
     });
 
     socket.on('bannir_utilisateur', (data) => {
-        const { pseudo } = data;
         const user = users[socket.id];
-
-        if (!user) {
-            socket.emit('erreur', 'Vous devez être connecté.');
-            return;
-        }
-
-        if (user.pseudo !== 'admin') {
-            socket.emit('erreur', 'Vous n\'avez pas les droits pour bannir un utilisateur.');
-            return;
-        }
-
-        const socketId = connectedUsers[pseudo];
+        if (!user || user.role !== 'admin') return;
+        const socketId = connectedUsers[data.pseudo];
         if (socketId) {
             io.sockets.sockets.get(socketId).disconnect(true);
-            delete connectedUsers[pseudo];
-            delete users[socketId];
-            io.emit('utilisateur_banni', { pseudo });
-            socket.emit('bannissement_reussi', { pseudo });
-            console.log(`🔨 ${pseudo} a été banni par ${user.pseudo}`);
-        } else {
-            socket.emit('erreur', 'Utilisateur non trouvé.');
+            delete connectedUsers[data.pseudo]; delete users[socketId];
+            io.emit('utilisateur_banni', { pseudo: data.pseudo });
         }
     });
 
     socket.on('deconnexion', () => {
         const user = users[socket.id];
-        if (user) {
-            delete connectedUsers[user.pseudo];
-            delete users[socket.id];
-            io.emit('utilisateurs_connectes', Object.keys(connectedUsers));
-            io.emit('utilisateur_deconnecte', user.pseudo);
-            console.log(`🔴 ${user.pseudo} s'est déconnecté`);
-        }
+        if (user) { delete connectedUsers[user.pseudo]; delete users[socket.id]; io.emit('utilisateurs_connectes', Object.keys(connectedUsers)); }
         socket.disconnect();
     });
 
     socket.on('disconnect', () => {
         const user = users[socket.id];
-        if (user) {
-            delete connectedUsers[user.pseudo];
-            delete users[socket.id];
-            io.emit('utilisateurs_connectes', Object.keys(connectedUsers));
-            io.emit('utilisateur_deconnecte', user.pseudo);
-            console.log(`🔴 ${user.pseudo} s'est déconnecté (involontaire)`);
-        }
+        if (user) { delete connectedUsers[user.pseudo]; delete users[socket.id]; io.emit('utilisateurs_connectes', Object.keys(connectedUsers)); }
     });
 });
 
-// ===== LANCEMENT =====
-server.listen(PORT, () => {
-    console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
-});
+server.listen(PORT, () => console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`));
