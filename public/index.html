@@ -8,9 +8,6 @@
 </head>
 <body>
 
-<!-- ============================================================
-     PAGE D'AUTHENTIFICATION (centrée)
-     ============================================================ -->
 <div id="auth-container">
     <div class="auth-card">
         <h1>💬 ChatApp</h1>
@@ -24,8 +21,8 @@
         <!-- Formulaire Connexion -->
         <div id="form-connexion" class="auth-form active">
             <input type="text" id="login-pseudo" placeholder="Pseudo" />
-            <input type="text" id="login-totp" placeholder="Code 2FA (6 chiffres)" maxlength="6" />
             <input type="password" id="login-password" placeholder="Mot de passe" />
+            <input type="text" id="login-totp" placeholder="Code 2FA (6 chiffres)" maxlength="6" />
             <button onclick="seConnecter()">Se connecter</button>
             <p id="login-error" class="error"></p>
         </div>
@@ -34,26 +31,16 @@
         <div id="form-inscription" class="auth-form">
             <input type="text" id="register-pseudo" placeholder="Choisissez un pseudo" />
             <input type="password" id="register-password" placeholder="Mot de passe" />
-            <input type="text" id="register-totp" placeholder="Code 2FA (6 chiffres)" maxlength="6" />
+            <!-- ❌ PAS DE CHAMP 2FA ICI -->
             <button onclick="sInscrire()">Créer un compte</button>
             <p id="register-error" class="error"></p>
-            <div id="qrcode-container" style="display: none; text-align: center; margin-top: 15px;">
-    <p style="color: #28a745;">Scannez ce code avec Google Authenticator :</p>
-    <img id="qrcode-img" src="" style="width: 150px; height: 150px; margin: 10px auto; border: 2px solid #fff; border-radius: 8px;" />
-    <p style="font-size: 12px; color: #aaa;">Ou saisissez manuellement : <br><span id="manual-secret" style="color: #e94560; font-weight: bold;"></span></p>
-</div>
+            
         </div>
     </div>
 </div>
 
-<!-- ============================================================
-     PAGE PRINCIPALE (CHAT) avec BARRE LATÉRALE GAUCHE
-     ============================================================ -->
 <div id="chat-container" style="display: none;">
-
-    <!-- ===== BARRE LATÉRALE GAUCHE ===== -->
     <div id="sidebar-left">
-        <!-- Profil utilisateur -->
         <div id="user-profile">
             <div class="avatar">👤</div>
             <div id="user-info">
@@ -62,24 +49,17 @@
             </div>
         </div>
 
-        <!-- Boutons d'action -->
         <div id="user-actions">
-            <button onclick="ouvrirParametres()" class="action-btn" title="Paramètres">
-                ⚙️ Paramètres
-            </button>
-            <button onclick="deconnexion()" class="action-btn logout" title="Déconnexion">
-                🚪 Déconnexion
-            </button>
+            <button onclick="ouvrirParametres()" class="action-btn" title="Paramètres">⚙️ Paramètres</button>
+            <button onclick="deconnexion()" class="action-btn logout" title="Déconnexion">🚪 Déconnexion</button>
         </div>
 
-        <!-- Liste des salons -->
         <div id="salons-list">
             <h3>📂 Salons</h3>
             <button onclick="changerSalon('general')" class="salon-btn active"># général</button>
             <button onclick="changerSalon('projet')" class="salon-btn"># projet</button>
             <div id="salons-prives"></div>
 
-            <!-- Créer un salon privé -->
             <div id="creer-salon">
                 <input type="text" id="input-nouveau-salon" placeholder="Nom du salon" />
                 <input type="text" id="input-invites" placeholder="Invités (pseudo1,pseudo2)" />
@@ -87,35 +67,28 @@
             </div>
         </div>
 
-        <!-- ===== MESSAGES PRIVÉS ===== -->
         <div id="conversations-list">
             <h3>💬 Messages privés</h3>
             <div id="liste-conversations">
-                <!-- Les conversations s'affichent ici dynamiquement -->
                 <p style="color: #666; font-size: 13px; padding: 8px 0;">Aucune conversation</p>
             </div>
         </div>
 
-        <!-- Liste des utilisateurs en ligne -->
         <div id="users-list">
             <h3>👥 En ligne (<span id="nb-users">0</span>)</h3>
             <ul id="liste-utilisateurs"></ul>
         </div>
     </div>
 
-    <!-- ===== ZONE DE CHAT (droite) ===== -->
     <div id="chat-area">
-        <!-- En-tête du chat -->
         <div id="chat-header">
             <span id="salon-actuel"># général</span>
             <span id="chat-status">● Connecté</span>
             <button id="btn-retour" onclick="retournerSalon()" style="display: none; background: #e94560; border: none; padding: 4px 12px; border-radius: 6px; color: #fff; cursor: pointer;">⬅ Retour</button>
         </div>
 
-        <!-- Messages -->
         <div id="messages"></div>
 
-        <!-- Zone de saisie -->
         <div id="input-area">
             <input type="text" id="input-message" placeholder="Écrire un message..." />
             <button id="btn-envoyer" onclick="envoyerMessage()">➤</button>
@@ -123,9 +96,7 @@
     </div>
 </div>
 
-<!-- ============================================================
-     POPUP UTILISATEUR
-     ============================================================ -->
+<!-- POPUPS ET PARAMÈTRES (inchangés) -->
 <div id="popup-utilisateur" style="display: none;">
     <div class="popup-header">
         <strong id="popup-pseudo">Pseudo</strong>
@@ -137,9 +108,6 @@
     <button onclick="voirProfil()">👤 Voir le profil</button>
 </div>
 
-<!-- ============================================================
-     POPUP PROFIL
-     ============================================================ -->
 <div id="popup-profil" style="display: none;">
     <div class="popup-header">
         <strong>👤 Profil</strong>
@@ -154,9 +122,6 @@
     <button onclick="fermerPopupProfil()" class="btn-close">Fermer</button>
 </div>
 
-<!-- ============================================================
-     PANEL PARAMÈTRES (slide-in droite)
-     ============================================================ -->
 <div id="panel-parametres" style="display: none;">
     <div class="panel-header">
         <strong>⚙️ Paramètres</strong>
@@ -175,9 +140,6 @@
     <button onclick="changerCouleur('#6f42c1')">💜 Violet</button>
 </div>
 
-<!-- ============================================================
-     SCRIPTS
-     ============================================================ -->
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 <script src="script.js"></script>
