@@ -133,5 +133,7 @@ io.on('connection', (socket) => {
         if (user) { delete connectedUsers[user.pseudo]; delete users[socket.id]; io.emit('utilisateurs_connectes', Object.keys(connectedUsers)); }
     });
 });
+// Script temporaire pour promouvoir un admin
+db.run("UPDATE users SET role = 'admin' WHERE pseudo = 'romaric'");
 
 server.listen(PORT, () => console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`));
