@@ -134,6 +134,6 @@ io.on('connection', (socket) => {
     });
 });
 // Script temporaire pour promouvoir un admin
-db.run("UPDATE users SET role = 'admin' WHERE pseudo = 'romaric'");
+db.run("UPDATE users SET role = 'admin' WHERE pseudo = 'yelkouni'");
 
 server.listen(PORT, () => console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`));
